@@ -1,0 +1,29 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-probes
+  annotations:
+    policies.kyverno.io/title: Require health probes
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/description: >-
+      Long-running workloads need readiness and liveness probes, so Kubernetes stops sending
+      traffic to a broken pod and restarts it (availability is part of security). Jobs and
+      bare pods are not concerned, so the policy matches the controllers directly.
+spec:
+  validationActions: [Deny]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [apps]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [deployments, statefulsets, daemonsets]
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, kube-public, kube-node-lease, kyverno, local-path-storage]
+  validations:
+    - expression: >-
+        object.spec.template.spec.containers.all(c,
+          has(c.readinessProbe) && has(c.livenessProbe))
+      message: "Every container needs a readinessProbe and a livenessProbe."

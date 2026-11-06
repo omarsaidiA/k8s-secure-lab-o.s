@@ -1,0 +1,113 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: keycloak
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak
+spec:
+  selector:
+    app.kubernetes.io/name: keycloak
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: keycloak
+    spec:
+      serviceAccountName: keycloak
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      # Keycloak rebuilds its optimized jar at start-up in lib/quarkus. To keep the root
+      # filesystem read-only, the directory is first copied into a writable emptyDir.
+      initContainers:
+        - name: copy-quarkus-build
+          image: quay.io/keycloak/keycloak:26.8.2
+          imagePullPolicy: IfNotPresent
+          # -R, not -a: the emptyDir root belongs to root, so its timestamps cannot be preserved
+          command: ["/bin/sh", "-c", "cp -R /opt/keycloak/lib/quarkus/. /quarkus/"]
+          securityContext: &containerSecurity
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources: &resources
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { memory: 1Gi }
+          volumeMounts:
+            - { name: quarkus, mountPath: /quarkus }
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.8.2
+          imagePullPolicy: IfNotPresent
+          # start-dev: plain HTTP and embedded dev database. DEV ONLY.
+          args: ["start-dev", "--import-realm"]
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: management, containerPort: 9000 }
+          env:
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: admin
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin
+                  key: password
+            # Same issuer (iss) for tokens fetched through the port-forward and for the API
+            - { name: KC_HOSTNAME, value: "http://localhost:8080" }
+            - { name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC, value: "true" }
+            - { name: KC_HEALTH_ENABLED, value: "true" }
+          securityContext: *containerSecurity
+          resources: *resources
+          startupProbe:
+            httpGet: { path: /health/started, port: management }
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: { path: /health/ready, port: management }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health/live, port: management }
+            periodSeconds: 20
+          volumeMounts:
+            - { name: quarkus, mountPath: /opt/keycloak/lib/quarkus }
+            - { name: data, mountPath: /opt/keycloak/data }
+            - name: realm
+              mountPath: /opt/keycloak/data/import/omar-petclinic-realm.json
+              subPath: omar-petclinic-realm.json
+              readOnly: true
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: quarkus
+          emptyDir: { sizeLimit: 256Mi }
+        - name: data
+          emptyDir: { sizeLimit: 256Mi }
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }
+        - name: realm
+          secret:
+            secretName: keycloak-realm

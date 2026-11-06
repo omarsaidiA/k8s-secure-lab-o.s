@@ -1,0 +1,87 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: petclinic-api
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: petclinic-api
+  labels:
+    app.kubernetes.io/name: petclinic-api
+spec:
+  selector:
+    app.kubernetes.io/name: petclinic-api
+  ports:
+    - { name: http, port: 9966, targetPort: http }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: petclinic-api
+  labels:
+    app.kubernetes.io/name: petclinic-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: petclinic-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: petclinic-api
+    spec:
+      serviceAccountName: petclinic-api
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          # Built locally from github.com/omarsaidiA/Omar-Petclinic at this commit (scripts/up.sh)
+          image: lab.local/omar-petclinic:9ec05d6
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http, containerPort: 9966 }
+          env:
+            - { name: SPRING_PROFILES_ACTIVE, value: "postgres,spring-data-jpa" }
+            - { name: POSTGRES_URL, value: "jdbc:postgresql://postgres:5432/petclinic" }
+            - { name: POSTGRES_USER, value: petclinic }
+            - name: POSTGRES_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: password
+            - { name: KEYCLOAK_ISSUER_URI, value: "http://localhost:8080/realms/omar-petclinic" }
+            - name: KEYCLOAK_JWK_SET_URI
+              value: "http://keycloak:8080/realms/omar-petclinic/protocol/openid-connect/certs"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            # Memory limit only: a CPU limit would throttle the JVM at start-up for no gain
+            limits: { memory: 1Gi }
+          # Liveness and readiness groups are enabled automatically by Spring Boot on Kubernetes
+          startupProbe:
+            httpGet: { path: /petclinic/actuator/health/liveness, port: http }
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: { path: /petclinic/actuator/health/readiness, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /petclinic/actuator/health/liveness, port: http }
+            periodSeconds: 20
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }

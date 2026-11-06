@@ -1,0 +1,35 @@
+# Run with: kyverno test policies/tests
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: lab-policies
+policies:
+  - ../disallow-latest-tag.yaml
+  - ../restrict-image-registries.yaml
+  - ../require-resources.yaml
+  - ../require-readonly-rootfs.yaml
+  - ../disallow-service-account-token.yaml
+  - ../require-probes.yaml
+  - ../require-namespace-pod-security.yaml
+resources:
+  - resources.yaml
+results:
+  # The compliant pod passes every pod policy
+  - { policy: disallow-latest-tag, isValidatingPolicy: true, kind: Pod, resources: [compliant], result: pass }
+  - { policy: restrict-image-registries, isValidatingPolicy: true, kind: Pod, resources: [compliant], result: pass }
+  - { policy: require-resources, isValidatingPolicy: true, kind: Pod, resources: [compliant], result: pass }
+  - { policy: require-readonly-rootfs, isValidatingPolicy: true, kind: Pod, resources: [compliant], result: pass }
+  - { policy: disallow-service-account-token, isValidatingPolicy: true, kind: Pod, resources: [compliant], result: pass }
+
+  # Each violation is caught by its policy
+  - { policy: disallow-latest-tag, isValidatingPolicy: true, kind: Pod, resources: [latest-tag, bad-init-container], result: fail }
+  - { policy: restrict-image-registries, isValidatingPolicy: true, kind: Pod, resources: [untrusted-registry, bad-init-container], result: fail }
+  - { policy: require-resources, isValidatingPolicy: true, kind: Pod, resources: [no-memory-limit], result: fail }
+  - { policy: require-readonly-rootfs, isValidatingPolicy: true, kind: Pod, resources: [writable-rootfs, bad-init-container], result: fail }
+  - { policy: disallow-service-account-token, isValidatingPolicy: true, kind: Pod, resources: [token-mounted], result: fail }
+
+  - { policy: require-probes, isValidatingPolicy: true, kind: Deployment, resources: [with-probes], result: pass }
+  - { policy: require-probes, isValidatingPolicy: true, kind: Deployment, resources: [without-probes], result: fail }
+
+  - { policy: require-namespace-pod-security, isValidatingPolicy: true, kind: Namespace, resources: [protected], result: pass }
+  - { policy: require-namespace-pod-security, isValidatingPolicy: true, kind: Namespace, resources: [unprotected, privileged-ns], result: fail }

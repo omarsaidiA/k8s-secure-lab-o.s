@@ -1,0 +1,20 @@
+# Accepted Trivy misconfiguration findings. Each one is a deliberate decision, not an oversight.
+
+# KSV-0011 (LOW) CPU limits: not set on purpose. CPU is compressible: a limit only throttles the
+# JVM (slow start-up, latency) without protecting the node. Requests guarantee fair scheduling;
+# memory limits, which do matter, are enforced by the require-resources Kyverno policy.
+KSV-0011
+
+# KSV-0020 / KSV-0021 (LOW) UID/GID above 10000: PostgreSQL (70) and Keycloak (1000) run as the
+# non-root users their images were built for. Pod Security "restricted" already forbids root.
+KSV-0020
+KSV-0021
+
+# KSV-0125 (MEDIUM) "untrusted registry": Trivy only knows a generic list. This lab enforces its
+# own allow-list (postgres, quay.io/keycloak/, lab.local/) with the restrict-image-registries
+# Kyverno policy, at admission time.
+KSV-0125
+
+# DS-0026 (LOW) HEALTHCHECK: the headercheck image runs as a short-lived Job, not a service;
+# Kubernetes ignores Dockerfile HEALTHCHECKs anyway and uses probes instead.
+DS-0026

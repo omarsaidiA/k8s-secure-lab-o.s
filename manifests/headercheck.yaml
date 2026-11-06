@@ -1,0 +1,57 @@
+# Continuous in-cluster audit of the API's HTTP security configuration with headercheck
+# (github.com/omarsaidiA/headerchecker). A failed job means a security header regressed.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: headercheck
+automountServiceAccountToken: false
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: headercheck
+  labels:
+    app.kubernetes.io/name: headercheck
+spec:
+  schedule: "*/30 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 120
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: headercheck
+        spec:
+          restartPolicy: Never
+          serviceAccountName: headercheck
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: headercheck
+              image: lab.local/headercheck:f835ea5
+              imagePullPolicy: IfNotPresent
+              args:
+                # Gitleaks false positive: "petclinic-api:<port>/..." looks like an API key
+                - http://petclinic-api:9966/petclinic/api/owners # gitleaks:allow
+                - http://petclinic-api:9966/petclinic/actuator/health # gitleaks:allow
+                - --fail-on
+                - medium
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { memory: 128Mi }

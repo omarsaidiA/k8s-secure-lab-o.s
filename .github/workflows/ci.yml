@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  KIND_VERSION: v0.33.0
+  KYVERNO_VERSION: v1.19.2
+  KUBECONFORM_VERSION: v0.8.0
+  TRIVY_IMAGE: aquasec/trivy:0.76.1
+
+jobs:
+  static:
+    name: Static checks (schemas, policies, misconfigurations)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Release binaries are checked against their published SHA-256 before use
+      - name: Install kubeconform and the Kyverno CLI
+        run: |
+          mkdir -p "$HOME/bin" && cd "$(mktemp -d)"
+          base=https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION
+          curl -fsSLO "$base/kubeconform-linux-amd64.tar.gz"
+          curl -fsSL "$base/CHECKSUMS" | grep ' kubeconform-linux-amd64.tar.gz$' | sha256sum -c
+          tar -xzf kubeconform-linux-amd64.tar.gz -C "$HOME/bin" kubeconform
+          base=https://github.com/kyverno/kyverno/releases/download/$KYVERNO_VERSION
+          curl -fsSLO "$base/kyverno-cli_${KYVERNO_VERSION}_linux_x86_64.tar.gz"
+          curl -fsSL "$base/checksums.txt" | grep " kyverno-cli_${KYVERNO_VERSION}_linux_x86_64.tar.gz$" | sha256sum -c
+          tar -xzf "kyverno-cli_${KYVERNO_VERSION}_linux_x86_64.tar.gz" -C "$HOME/bin" kyverno
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Render manifests
+        run: mkdir -p .cache && kubectl kustomize manifests > .cache/rendered.yaml
+
+      - name: Validate Kubernetes schemas (kubeconform)
+        run: |
+          kubeconform -strict -summary -kubernetes-version 1.37.0 .cache/rendered.yaml
+          kubeconform -strict -summary -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            policies/*.yaml
+
+      - name: Test Kyverno policies (good and bad fixtures)
+        run: kyverno test policies/tests
+
+      - name: Lint scripts (ShellCheck)
+        run: shellcheck scripts/*.sh
+
+      - name: Misconfiguration scan report (Trivy)
+        run: |
+          docker run --rm -v "$PWD:/src" "$TRIVY_IMAGE" config --quiet \
+            --ignorefile /src/.trivyignore --skip-dirs /src/policies/tests --skip-dirs /src/.cache \
+            --format sarif --output /src/trivy-config.sarif /src
+
+      - name: Upload SARIF
+        if: always() && hashFiles('trivy-config.sarif') != ''
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: trivy-config.sarif
+          category: trivy-config
+
+      # The gate also covers .cache/rendered.yaml: that is what the cluster actually receives.
+      # policies/tests holds intentionally bad fixtures.
+      - name: Fail on HIGH/CRITICAL misconfigurations
+        run: |
+          docker run --rm -v "$PWD:/src:ro" "$TRIVY_IMAGE" config --quiet --exit-code 1 \
+            --severity HIGH,CRITICAL --ignorefile /src/.trivyignore \
+            --skip-dirs /src/policies/tests /src
+
+  e2e:
+    name: End-to-end (kind cluster, every control verified)
+    needs: static
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install kind
+        run: |
+          mkdir -p "$HOME/bin" && cd "$(mktemp -d)"
+          base=https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION
+          curl -fsSLo kind "$base/kind-linux-amd64"
+          echo "$(curl -fsSL "$base/kind-linux-amd64.sha256sum" | cut -d' ' -f1)  kind" | sha256sum -c
+          install -m 0755 kind "$HOME/bin/kind"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Build the lab
+        run: bash scripts/up.sh
+
+      - name: Verify the security controls
+        run: bash scripts/verify.sh
+
+      - name: Diagnostics
+        if: failure()
+        run: |
+          kubectl get pods -A -o wide
+          kubectl -n petclinic get events --sort-by=.lastTimestamp | tail -40
+          for d in petclinic-api keycloak; do kubectl -n petclinic logs "deploy/$d" --tail=60 || true; done
+          kubectl -n petclinic logs statefulset/postgres --tail=60 || true

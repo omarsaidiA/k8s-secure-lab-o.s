@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: petclinic
+  labels:
+    # Pod Security Admission (built into Kubernetes): pods that break the "restricted" profile
+    # (root user, privilege escalation, Linux capabilities, host access...) are rejected.
+    # The version is pinned so a cluster upgrade cannot silently change the rules.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: v1.37
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

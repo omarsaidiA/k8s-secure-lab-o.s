@@ -1,0 +1,29 @@
+# Local Kubernetes cluster: one control plane and one worker, both running in Docker.
+# Node images are pinned by digest (from the kind v0.33.0 release notes), not only by tag.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: secure-lab
+nodes:
+  - role: control-plane
+    image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+    # Encryption at rest for Secrets. The file holds the key, so scripts/up.sh generates it
+    # locally and it is never committed (see .gitignore).
+    extraMounts:
+      - hostPath: kind/encryption-config.yaml
+        containerPath: /etc/kubernetes/encryption/config.yaml
+        readOnly: true
+    kubeadmConfigPatches:
+      - |
+        kind: ClusterConfiguration
+        apiServer:
+          extraArgs:
+            - name: encryption-provider-config
+              value: /etc/kubernetes/encryption/config.yaml
+          extraVolumes:
+            - name: encryption
+              hostPath: /etc/kubernetes/encryption
+              mountPath: /etc/kubernetes/encryption
+              readOnly: true
+              pathType: DirectoryOrCreate
+  - role: worker
+    image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5

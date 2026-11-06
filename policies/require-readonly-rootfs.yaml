@@ -1,0 +1,32 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-readonly-rootfs
+  annotations:
+    policies.kyverno.io/title: Require a read-only root filesystem
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      An attacker who gets code execution cannot drop tools or modify binaries in the
+      container. Paths that must be writable are mounted explicitly as emptyDir volumes.
+      The "restricted" Pod Security profile does not cover this, hence a Kyverno policy.
+spec:
+  validationActions: [Deny]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, kube-public, kube-node-lease, kyverno, local-path-storage]
+  variables:
+    - name: containers
+      expression: object.spec.containers + object.spec.?initContainers.orValue([])
+  validations:
+    - expression: >-
+        variables.containers.all(c,
+          c.?securityContext.?readOnlyRootFilesystem.orValue(false) == true)
+      message: "Every container must set securityContext.readOnlyRootFilesystem: true."

@@ -1,0 +1,109 @@
+{
+  "realm": "omar-petclinic",
+  "displayName": "omar-petclinic (DEV ONLY - test users inside)",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "rememberMe": false,
+  "loginWithEmailAllowed": false,
+  "duplicateEmailsAllowed": false,
+  "bruteForceProtected": true,
+  "failureFactor": 5,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "permanentLockout": false,
+  "passwordPolicy": "length(12) and notUsername and upperCase(1) and lowerCase(1) and digits(1) and specialChars(1)",
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+  "roles": {
+    "realm": [
+      { "name": "ADMIN", "description": "Full access to the API" },
+      { "name": "VET", "description": "Read owners and pets, manage visits" },
+      { "name": "OWNER", "description": "Read-only access to own data" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "omar-petclinic-api",
+      "name": "omar-petclinic API",
+      "description": "Public client used to obtain tokens for the API. Direct access grants are enabled for local testing only (DEV ONLY).",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:9966/petclinic/*"],
+      "webOrigins": ["http://localhost:9966"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:9966/petclinic/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience-omar-petclinic-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "omar-petclinic-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "owner-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "owner_id",
+            "claim.name": "owner_id",
+            "jsonType.label": "long",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "admin",
+      "enabled": true,
+      "email": "admin@omar-petclinic.local",
+      "emailVerified": true,
+      "firstName": "Dev",
+      "lastName": "Admin",
+      "credentials": [{ "type": "password", "value": "Admin-DevOnly-2026!", "temporary": false }],
+      "realmRoles": ["ADMIN"]
+    },
+    {
+      "username": "vet",
+      "enabled": true,
+      "email": "vet@omar-petclinic.local",
+      "emailVerified": true,
+      "firstName": "James",
+      "lastName": "Carter",
+      "credentials": [{ "type": "password", "value": "Vet-DevOnly-2026!", "temporary": false }],
+      "realmRoles": ["VET"]
+    },
+    {
+      "username": "owner",
+      "enabled": true,
+      "email": "owner@omar-petclinic.local",
+      "emailVerified": true,
+      "firstName": "George",
+      "lastName": "Franklin",
+      "attributes": { "owner_id": ["1"] },
+      "credentials": [{ "type": "password", "value": "Owner-DevOnly-2026!", "temporary": false }],
+      "realmRoles": ["OWNER"]
+    }
+  ]
+}

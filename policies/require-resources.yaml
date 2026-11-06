@@ -1,0 +1,34 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-resources
+  annotations:
+    policies.kyverno.io/title: Require resource requests and memory limits
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Without requests the scheduler cannot place pods sensibly; without a memory limit one
+      pod (bug, leak or attack) can exhaust the node and take its neighbours down. CPU limits
+      are not required on purpose: they throttle workloads without protecting memory.
+spec:
+  validationActions: [Deny]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, kube-public, kube-node-lease, kyverno, local-path-storage]
+  variables:
+    - name: containers
+      expression: object.spec.containers + object.spec.?initContainers.orValue([])
+  validations:
+    - expression: >-
+        variables.containers.all(c,
+          c.?resources.?requests.?cpu.hasValue()
+          && c.?resources.?requests.?memory.hasValue()
+          && c.?resources.?limits.?memory.hasValue())
+      message: "Every container needs cpu and memory requests and a memory limit."

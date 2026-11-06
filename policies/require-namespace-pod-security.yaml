@@ -1,0 +1,28 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-namespace-pod-security
+  annotations:
+    policies.kyverno.io/title: Require Pod Security on namespaces
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Pod Security Admission only protects namespaces that carry its label. This policy makes
+      sure no new namespace is created without at least the "baseline" profile enforced.
+spec:
+  validationActions: [Deny]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [namespaces]
+  matchConditions:
+    - name: not-a-system-namespace
+      expression: >-
+        !(object.metadata.name in
+          ['default', 'kube-system', 'kube-public', 'kube-node-lease', 'kyverno', 'local-path-storage'])
+  validations:
+    - expression: >-
+        object.metadata.?labels[?'pod-security.kubernetes.io/enforce'].orValue('')
+          in ['baseline', 'restricted']
+      message: "Namespaces must set pod-security.kubernetes.io/enforce to baseline or restricted."

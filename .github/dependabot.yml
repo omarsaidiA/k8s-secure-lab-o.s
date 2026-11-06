@@ -1,0 +1,18 @@
+version: 2
+
+# Cooldown: wait a week before proposing a fresh release (a compromised version is more likely
+# to be pulled first). No auto-merge: every update goes through the CI and a review.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: docker
+    directory: /images/headercheck
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7

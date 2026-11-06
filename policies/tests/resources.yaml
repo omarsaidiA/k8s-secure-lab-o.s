@@ -1,0 +1,169 @@
+# Test fixtures for the Kyverno CLI: one compliant pod, then one pod per violation.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: compliant
+  namespace: petclinic
+spec:
+  automountServiceAccountToken: false
+  containers:
+    - name: app
+      image: lab.local/headercheck:f835ea5
+      securityContext:
+        readOnlyRootFilesystem: true
+      resources:
+        requests: { cpu: 50m, memory: 64Mi }
+        limits: { memory: 128Mi }
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: latest-tag
+  namespace: petclinic
+spec:
+  automountServiceAccountToken: false
+  containers:
+    - name: app
+      image: lab.local/headercheck:latest
+      securityContext:
+        readOnlyRootFilesystem: true
+      resources:
+        requests: { cpu: 50m, memory: 64Mi }
+        limits: { memory: 128Mi }
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: untrusted-registry
+  namespace: petclinic
+spec:
+  automountServiceAccountToken: false
+  containers:
+    - name: app
+      image: docker.io/nginx:1.29
+      securityContext:
+        readOnlyRootFilesystem: true
+      resources:
+        requests: { cpu: 50m, memory: 64Mi }
+        limits: { memory: 128Mi }
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: no-memory-limit
+  namespace: petclinic
+spec:
+  automountServiceAccountToken: false
+  containers:
+    - name: app
+      image: lab.local/headercheck:f835ea5
+      securityContext:
+        readOnlyRootFilesystem: true
+      resources:
+        requests: { cpu: 50m, memory: 64Mi }
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: writable-rootfs
+  namespace: petclinic
+spec:
+  automountServiceAccountToken: false
+  containers:
+    - name: app
+      image: lab.local/headercheck:f835ea5
+      resources:
+        requests: { cpu: 50m, memory: 64Mi }
+        limits: { memory: 128Mi }
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: token-mounted
+  namespace: petclinic
+spec:
+  containers:
+    - name: app
+      image: lab.local/headercheck:f835ea5
+      securityContext:
+        readOnlyRootFilesystem: true
+      resources:
+        requests: { cpu: 50m, memory: 64Mi }
+        limits: { memory: 128Mi }
+---
+# An init container is checked too: it must not be a way around the rules
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bad-init-container
+  namespace: petclinic
+spec:
+  automountServiceAccountToken: false
+  initContainers:
+    - name: init
+      image: docker.io/busybox:latest
+      resources:
+        requests: { cpu: 50m, memory: 64Mi }
+        limits: { memory: 128Mi }
+  containers:
+    - name: app
+      image: lab.local/headercheck:f835ea5
+      securityContext:
+        readOnlyRootFilesystem: true
+      resources:
+        requests: { cpu: 50m, memory: 64Mi }
+        limits: { memory: 128Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: with-probes
+  namespace: petclinic
+spec:
+  selector:
+    matchLabels: { app: with-probes }
+  template:
+    metadata:
+      labels: { app: with-probes }
+    spec:
+      containers:
+        - name: app
+          image: lab.local/headercheck:f835ea5
+          readinessProbe: { tcpSocket: { port: 8080 } }
+          livenessProbe: { tcpSocket: { port: 8080 } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: without-probes
+  namespace: petclinic
+spec:
+  selector:
+    matchLabels: { app: without-probes }
+  template:
+    metadata:
+      labels: { app: without-probes }
+    spec:
+      containers:
+        - name: app
+          image: lab.local/headercheck:f835ea5
+          readinessProbe: { tcpSocket: { port: 8080 } }
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: protected
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: unprotected
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: privileged-ns
+  labels:
+    pod-security.kubernetes.io/enforce: privileged

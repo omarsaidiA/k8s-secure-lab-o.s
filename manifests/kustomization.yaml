@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: petclinic
+
+resources:
+  - namespace.yaml
+  - network-policies.yaml
+  - postgres.yaml
+  - keycloak.yaml
+  - petclinic-api.yaml
+  - headercheck.yaml
+
+secretGenerator:
+  # Copied from Omar-Petclinic. It contains the (DEV ONLY) test users' passwords, so it is a
+  # Secret, encrypted at rest in etcd, rather than a ConfigMap (Trivy KSV-01010).
+  - name: keycloak-realm
+    files:
+      - keycloak/omar-petclinic-realm.json
